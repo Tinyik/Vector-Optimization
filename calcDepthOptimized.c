@@ -44,24 +44,32 @@ float euclideanDistance(float *a, float *b, int n) {
 	return result;
 }
 
+__m128 displacementOptimized(__m128 dxs, __m128 dys) {
+    return _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(dxs, dxs), _mm_mul_ps(dys, dys)));
+}
+
 void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth, int imageHeight, int featureWidth, int featureHeight, int maximumDisplacement)
 {
-
+    const int X_MAX = imageWidth - featureWidth - 4;
+    const int Y_MAX = imageHeight - featureHeight;
+    const int MAX_DIFFERENCE = 65280;
     #pragma omp parallel for
     for (int y = 0; y < imageHeight; y++)
 	{
-		for (int x = 0; x < imageWidth; x++)
+        int x = 0;
+		for (; x < imageWidth; x+=4)
 		{
 			/* Set the depth to 0 if looking at edge of the image where a feature box cannot fit. */
-			if ((y < featureHeight) || (y >= imageHeight - featureHeight) || (x < featureWidth) || (x >= imageWidth - featureWidth))
+			if ((y < featureHeight) || (y >= Y_MAX) || (x < featureWidth) || (x >= X_MAX))
 			{
 				depth[y * imageWidth + x] = 0;
+                x -= 3;
 				continue;
 			}
 
-			float minimumSquaredDifference = -1;
-			int minimumDy = 0;
-			int minimumDx = 0;
+			__m128 minimumSquaredDifference = _mm_set1_ps(MAX_DIFFERENCE);
+			__m128i minimumDy = _mm_setzero_si128();
+			__m128i minimumDx = _mm_setzero_si128();
 
 			/* Iterate through all feature boxes that fit inside the maximum displacement box.
 			   centered around the current pixel. */
@@ -76,25 +84,51 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 					}
 
                     // Euclidean Distance
-                    int size = (featureWidth * 2 + 1) * (featureWidth * 2 + 1);
-                    float a[size];
-                    float b[size];
-                    int count = 0;
+                    // int size = (featureWidth * 2 + 1) * (featureWidth * 2 + 1);
+                    // float a[size];
+                    // float b[size];
+                    // int count = 0;
+                    // for (int boxY = -featureHeight; boxY <= featureHeight; boxY++)
+                    // {
+                    // 	for (int boxX = -featureWidth; boxX <= featureWidth; boxX++)
+                    // 	{
+                    // 		int leftX = x + boxX;
+                    // 		int leftY = y + boxY;
+                    // 		int rightX = x + dx + boxX;
+                    // 		int rightY = y + dy + boxY;
+                    //         a[count] = left[leftY * imageWidth + leftX];
+                    //         b[count] = right[rightY * imageWidth + rightX];
+                    //         count += 1;
+                    // 	}
+                    // }
+                    //
+                    // float squaredDifference = euclideanDistance(a, b, size);
+
+                    __m128 squaredDifference = _mm_setzero_ps();
+
+                    /* Sum the squared difference within a box of +/- featureHeight and +/- featureWidth. */
                     for (int boxY = -featureHeight; boxY <= featureHeight; boxY++)
                     {
-                    	for (int boxX = -featureWidth; boxX <= featureWidth; boxX++)
-                    	{
-                    		int leftX = x + boxX;
-                    		int leftY = y + boxY;
-                    		int rightX = x + dx + boxX;
-                    		int rightY = y + dy + boxY;
-                            a[count] = left[leftY * imageWidth + leftX];
-                            b[count] = right[rightY * imageWidth + rightX];
-                            count += 1;
-                    	}
+                        for (int boxX = -featureWidth; boxX <= featureWidth; boxX++)
+                        {
+                            int leftX = x + boxX;
+                            int leftY = y + boxY;
+                            int rightX = x + dx + boxX;
+                            int rightY = y + dy + boxY;
+
+                            __m128 difference = _mm_sub_ps(_mm_load_ps(left + leftY * imageWidth + leftX), _mm_load_ps(right + rightY * imageWidth + rightX));
+                            //float difference = left[leftY * imageWidth + leftX] - right[rightY * imageWidth + rightX];
+                            squaredDifference = _mm_add_ps(squaredDifference, _mm_mul_ps(difference, difference));
+                            //squaredDifference += difference * difference;
+                        }
                     }
 
-                    float squaredDifference = euclideanDistance(a, b, size);
+                    // if (((minimumSquaredDifference == squaredDifference) && (displacementNaive(dx, dy) < displacementNaive(minimumDx, minimumDy))) || (minimumSquaredDifference > squaredDifference))
+                    // {
+                    //     minimumSquaredDifference = squaredDifference;
+                    //     minimumDx = dx;
+                    //     minimumDy = dy;
+                    // }
 
 					/*
 					Check if you need to update minimum square difference.
@@ -103,12 +137,13 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 					displacement is less, or the current squared difference
 					is less than the min square difference.
 					*/
-					if ((minimumSquaredDifference == -1) || ((minimumSquaredDifference == squaredDifference) && (displacementNaive(dx, dy) < displacementNaive(minimumDx, minimumDy))) || (minimumSquaredDifference > squaredDifference))
-					{
-						minimumSquaredDifference = squaredDifference;
-						minimumDx = dx;
-						minimumDy = dy;
-					}
+                    __m128 update = _mm_and_ps(_mm_cmpeq_ps(minimumSquaredDifference, squaredDifference), _mm_cmpge_ps(displacementOptimized(minimumDx, minimumDy), _mm_set1_ps(displacementNaive(dx, dy)));
+                           update = _mm_or_ps(update, _mm_cmpge_ps(minimumSquaredDifference, squaredDifference));
+
+                           minimumSquaredDifference = _mm_or_ps(_mm_and_ps(minimumSquaredDifference, update), _mm_andnot_ps(update, minimumSquaredDifference));
+                           minimumDx = _mm_or_ps(_mm_and_ps(minimumDx, update), _mm_andnot_ps(update, minimumDx));
+                           minimumDy = _mm_or_ps(_mm_and_ps(minimumDy, update), _mm_andnot_ps(update, minimumDy));
+
 				}
 			}
 
@@ -116,15 +151,19 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 			Set the value in the depth map.
 			If max displacement is equal to 0, the depth value is just 0.
 			*/
+            _mm_cmpeq_ps(minimumSquaredDifference, _mm_set1_ps(MAX_DIFFERENCE))
+
 			if (minimumSquaredDifference != -1)
 			{
 				if (maximumDisplacement == 0)
 				{
-					depth[y * imageWidth + x] = 0;
+					// depth[y * imageWidth + x] = 0;
+                    _mm_store_ps(depth + y * imageWidth + x, _mm_setzero_ps());
 				}
 				else
 				{
-					depth[y * imageWidth + x] = displacementNaive(minimumDx, minimumDy);
+					// depth[y * imageWidth + x] = displacementNaive(minimumDx, minimumDy);
+                    _mm_store_ps(depth + y * imageWidth + x, displacementOptimized(minimumDx, minimumDy));
 				}
 			}
 			else
@@ -132,5 +171,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				depth[y * imageWidth + x] = 0;
 			}
 		}
+
+        //
 	}
 }
