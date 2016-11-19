@@ -53,7 +53,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
     const int X_MAX = imageWidth - featureWidth - 4;
     const int Y_MAX = imageHeight - featureHeight;
     const int MAX_DIFFERENCE = 65280;
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int y = 0; y < imageHeight; y++)
 	{
         int x = 0;
@@ -116,13 +116,15 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
                             int rightX = x + dx + boxX;
                             int rightY = y + dy + boxY;
 
-														printf(" loading %d\n", left + leftY * imageWidth + leftX);
-														__m128 a = _mm_load_ps(left + leftY * imageWidth + leftX);
-														printf(" loading %d\n", right + rightY * imageWidth + rightX);
-														__m128 b = _mm_load_ps(right + rightY * imageWidth + rightX);
-														printf(" doing %d\n", rightX);
-														__m128 difference = _mm_sub_ps(a, b);
-                            // __m128 difference = _mm_sub_ps(_mm_load_ps(left + leftY * imageWidth + leftX), _mm_load_ps(right + rightY * imageWidth + rightX));
+														float dump[4];
+
+														// printf(" loading %d\n", left + leftY * imageWidth + leftX);
+														// __m128 a = _mm_load_ps(left + leftY * imageWidth + leftX);
+														// printf(" loading %d\n", right + rightY * imageWidth + rightX);
+														// __m128 b = _mm_load_ps(right + rightY * imageWidth + rightX);
+														// printf(" doing %d\n", rightX);
+														// __m128 difference = _mm_sub_ps(a, b);
+                            __m128 difference = _mm_sub_ps(_mm_loadu_ps(left + leftY * imageWidth + leftX), _mm_loadu_ps(right + rightY * imageWidth + rightX));
                             //float difference = left[leftY * imageWidth + leftX] - right[rightY * imageWidth + rightX];
                             squaredDifference = _mm_add_ps(squaredDifference, _mm_mul_ps(difference, difference));
                             //squaredDifference += difference * difference;
@@ -153,18 +155,21 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				}
 			}
 
+			
+
 			/*
 			Set the value in the depth map.
 			If max displacement is equal to 0, the depth value is just 0.
 			*/
 
+			// printf("done\n");
 
 			__m128 update = _mm_cmpneq_ps(minimumSquaredDifference, _mm_set1_ps(MAX_DIFFERENCE));
 
 			if (maximumDisplacement == 0) {
-				_mm_store_ps(depth + y * imageWidth + x, _mm_setzero_ps());
+				_mm_storeu_ps(depth + y * imageWidth + x, _mm_setzero_ps());
 			} else {
-				_mm_store_ps(depth + y * imageWidth + x, _mm_and_ps(update, displacementOptimized(minimumDx, minimumDy)));
+				_mm_storeu_ps(depth + y * imageWidth + x, _mm_and_ps(update, displacementOptimized(minimumDx, minimumDy)));
 			}
 
 			// if (minimumSquaredDifference != -1)
