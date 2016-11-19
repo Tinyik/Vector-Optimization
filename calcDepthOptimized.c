@@ -67,7 +67,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				continue;
 			}
 
-			__m128 minimumSquaredDifference = _mm_set1_ps(MAX_DIFFERENCE);
+			__m128 minimumSquaredDifference = _mm_set1_ps(-1);
 			__m128 minimumDy = _mm_setzero_ps();
 			__m128 minimumDx = _mm_setzero_ps();
 
@@ -148,15 +148,22 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
                     __m128 update = _mm_and_ps(_mm_cmpeq_ps(minimumSquaredDifference, squaredDifference), _mm_cmpgt_ps(displacementOptimized(minimumDx, minimumDy), _mm_set1_ps(displacementNaive(dx, dy))));
 										float dump[4];
 										// printf("displacement: %f\n", displacementNaive(dx, dy));
-									 _mm_storeu_ps(dump, minimumSquaredDifference);
-									//  printf("%f\n", dump[0]);
-									//  printf("%f\n", dump[1]);
-									//  printf("%f\n", dump[2]);
-									//  printf("%f\n", dump[3]);
                            update = _mm_or_ps(update, _mm_cmpgt_ps(minimumSquaredDifference, squaredDifference));
-
+													 update = _mm_or_ps(update, _mm_cmpeq_ps(minimumSquaredDifference, _mm_set1_ps(-1)));
+													 _mm_storeu_ps(dump, _mm_cmpeq_ps(update, _mm_set1_ps(0)));
+													 printf("%f\n", dump[0]);
+													 printf("%f\n", dump[1]);
+													 printf("%f\n", dump[2]);
+													 printf("%f\n", dump[3]);
+													 printf("END\n");
 
                            minimumSquaredDifference = _mm_or_ps(_mm_and_ps(minimumSquaredDifference, update), _mm_andnot_ps(update, minimumSquaredDifference));
+													 _mm_storeu_ps(dump, minimumSquaredDifference);
+													 printf("%f\n", dump[0]);
+													 printf("%f\n", dump[1]);
+													 printf("%f\n", dump[2]);
+													 printf("%f\n", dump[3]);
+													 printf("END\n");
                            minimumDx = _mm_or_ps(_mm_and_ps(minimumDx, update), _mm_andnot_ps(update, minimumDx));
                            minimumDy = _mm_or_ps(_mm_and_ps(minimumDy, update), _mm_andnot_ps(update, minimumDy));
 
