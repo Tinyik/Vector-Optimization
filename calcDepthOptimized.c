@@ -57,10 +57,10 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
     for (int y = 0; y < imageHeight; y++)
 	{
         int x = 0;
-		for (; x < imageWidth; x+=4)
+		for (; x < X_MAX; x+=4)
 		{
 			/* Set the depth to 0 if looking at edge of the image where a feature box cannot fit. */
-			if ((y < featureHeight) || (y >= Y_MAX) || (x < featureWidth) || (x >= X_MAX))
+			if ((y < featureHeight) || (y >= Y_MAX) || (x < featureWidth))
 			{
 				depth[y * imageWidth + x] = 0;
                 x -= 3;
@@ -145,8 +145,16 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 					displacement is less, or the current squared difference
 					is less than the min square difference.
 					*/
-                    __m128 update = _mm_and_ps(_mm_cmpeq_ps(minimumSquaredDifference, squaredDifference), _mm_cmpge_ps(displacementOptimized(minimumDx, minimumDy), _mm_set1_ps(displacementNaive(dx, dy))));
-                           update = _mm_or_ps(update, _mm_cmpge_ps(minimumSquaredDifference, squaredDifference));
+                    __m128 update = _mm_and_ps(_mm_cmpeq_ps(minimumSquaredDifference, squaredDifference), _mm_cmpgt_ps(displacementOptimized(minimumDx, minimumDy), _mm_set1_ps(displacementNaive(dx, dy))));
+										float dump[4];
+										// printf("displacement: %f\n", displacementNaive(dx, dy));
+									 _mm_storeu_ps(dump, minimumSquaredDifference);
+									//  printf("%f\n", dump[0]);
+									//  printf("%f\n", dump[1]);
+									//  printf("%f\n", dump[2]);
+									//  printf("%f\n", dump[3]);
+                           update = _mm_or_ps(update, _mm_cmpgt_ps(minimumSquaredDifference, squaredDifference));
+
 
                            minimumSquaredDifference = _mm_or_ps(_mm_and_ps(minimumSquaredDifference, update), _mm_andnot_ps(update, minimumSquaredDifference));
                            minimumDx = _mm_or_ps(_mm_and_ps(minimumDx, update), _mm_andnot_ps(update, minimumDx));
@@ -155,7 +163,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				}
 			}
 
-			
+
 
 			/*
 			Set the value in the depth map.
@@ -163,6 +171,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 			*/
 
 			// printf("done\n");
+
 
 			__m128 update = _mm_cmpneq_ps(minimumSquaredDifference, _mm_set1_ps(MAX_DIFFERENCE));
 
@@ -172,26 +181,89 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				_mm_storeu_ps(depth + y * imageWidth + x, _mm_and_ps(update, displacementOptimized(minimumDx, minimumDy)));
 			}
 
-			// if (minimumSquaredDifference != -1)
-			// {
-			// 	if (maximumDisplacement == 0)
-			// 	{
-			// 		// depth[y * imageWidth + x] = 0;
-      //               _mm_store_ps(depth + y * imageWidth + x, _mm_setzero_ps());
-			// 	}
-			// 	else
-			// 	{
-			// 		// depth[y * imageWidth + x] = displacementNaive(minimumDx, minimumDy);
-      //               _mm_store_ps(depth + y * imageWidth + x, displacementOptimized(minimumDx, minimumDy));
-			// 	}
-			// }
-			// else
-			// {
-			// 	depth[y * imageWidth + x] = 0;
-			// }
+
 
 		}
 
+
+		for (;x < imageWidth; x++)
+		{
+			/* Set the depth to 0 if looking at edge of the image where a feature box cannot fit. */
+			if ((y < featureHeight) || (y >= imageHeight - featureHeight) || (x < featureWidth) || (x >= imageWidth - featureWidth))
+			{
+				depth[y * imageWidth + x] = 0;
+				continue;
+			}
+
+			float minimumSquaredDifference = -1;
+			int minimumDy = 0;
+			int minimumDx = 0;
+
+			/* Iterate through all feature boxes that fit inside the maximum displacement box.
+				 centered around the current pixel. */
+			for (int dy = -maximumDisplacement; dy <= maximumDisplacement; dy++)
+			{
+				for (int dx = -maximumDisplacement; dx <= maximumDisplacement; dx++)
+				{
+					/* Skip feature boxes that dont fit in the displacement box. */
+					if (y + dy - featureHeight < 0 || y + dy + featureHeight >= imageHeight || x + dx - featureWidth < 0 || x + dx + featureWidth >= imageWidth)
+					{
+						continue;
+					}
+
+					float squaredDifference = 0;
+
+					/* Sum the squared difference within a box of +/- featureHeight and +/- featureWidth. */
+					for (int boxY = -featureHeight; boxY <= featureHeight; boxY++)
+					{
+						for (int boxX = -featureWidth; boxX <= featureWidth; boxX++)
+						{
+							int leftX = x + boxX;
+							int leftY = y + boxY;
+							int rightX = x + dx + boxX;
+							int rightY = y + dy + boxY;
+
+							float difference = left[leftY * imageWidth + leftX] - right[rightY * imageWidth + rightX];
+							squaredDifference += difference * difference;
+						}
+					}
+
+					/*
+					Check if you need to update minimum square difference.
+					This is when either it has not been set yet, the current
+					squared displacement is equal to the min and but the new
+					displacement is less, or the current squared difference
+					is less than the min square difference.
+					*/
+					if ((minimumSquaredDifference == -1) || ((minimumSquaredDifference == squaredDifference) && (displacementNaive(dx, dy) < displacementNaive(minimumDx, minimumDy))) || (minimumSquaredDifference > squaredDifference))
+					{
+						minimumSquaredDifference = squaredDifference;
+						minimumDx = dx;
+						minimumDy = dy;
+					}
+				}
+			}
+
+			/*
+			Set the value in the depth map.
+			If max displacement is equal to 0, the depth value is just 0.
+			*/
+			if (minimumSquaredDifference != -1)
+			{
+				if (maximumDisplacement == 0)
+				{
+					depth[y * imageWidth + x] = 0;
+				}
+				else
+				{
+					depth[y * imageWidth + x] = displacementNaive(minimumDx, minimumDy);
+				}
+			}
+			else
+			{
+				depth[y * imageWidth + x] = 0;
+			}
+		}
         //
 	}
 }
