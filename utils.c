@@ -160,7 +160,7 @@ void printFloatImage(const float *data, int width, int height)
 	{
 		for (int x = 0; x < width; x++)
 		{
-			printf("%04.4f ", data[y * width + x]);
+			printf("%02.4f ", data[y * width + x]);
 		}
 		printf("\r\n");
 	}
@@ -207,7 +207,7 @@ static void saveImageInternal(char *filename, const unsigned char *data, int wid
 	int footerSize = (4 - ((infoSize + colorTableSize + dataSize) % 4)) % 4;
 	int totalSize = infoSize + colorTableSize + dataSize + footerSize;
 
-	unsigned char info[] = 
+	unsigned char info[] =
 	{
 		// 0x00 Magic byte
 		0x42, 0x4d,
@@ -341,4 +341,3 @@ void saveImageWithDepth(char *filename, const unsigned char *data, const unsigne
 
 	saveImageInternal(filename, data24bit, width, height, 24);
 }
-

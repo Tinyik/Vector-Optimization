@@ -58,6 +58,15 @@ static bool benchmarkMatrix(int imageWidth, int imageHeight, int featureWidth, i
 		allocationFailed();
 	}
 
+    float* error = (float*)calloc(imageWidth * imageHeight, sizeof(float));
+	if (error == NULL)
+	{
+		free(left);
+		free(right);
+		allocationFailed();
+	}
+
+
 	float* depthOptimized = (float*)malloc(sizeof(float)* imageWidth * imageHeight);
 	if (depthOptimized == NULL)
 	{
@@ -82,33 +91,48 @@ static bool benchmarkMatrix(int imageWidth, int imageHeight, int featureWidth, i
 	endTSC = __rdtsc();
 	double naiveTSC = endTSC - startTSC;
 
+
+
 	// Speedup is just naive / optimised
 	speedup = naiveTSC / optimizedTSC;
 	printf("%.4f Speedup Ratio\r\n", speedup);
-
+    int works = 1;
 	for (size_t i = 0; i < imageWidth * imageHeight; i++)
 	{
 		if (!floatsWithinTolerance(depthNaive[i], depthOptimized[i]))
 		{
-			printf("WRONG AT i = %d\n", i);
-			printf("naive: %d\n", depthNaive[i]);
+            // printf("%d - %d | ", i / imageWidth, i % imageWidth);
+			// printf("naive: %d\n", depthNaive[i]);
 			// printFloatImage(depthNaive, imageWidth, imageHeight);
-			printf("yours: %d\n", depthOptimized[i]);
+			// printf("yours: %d\n", depthOptimized[i]);
 			// printFloatImage(depthOptimized, imageWidth, imageHeight);
-			free(left);
-			free(right);
-			free(depthNaive);
-			free(depthOptimized);
-			return false;
-		}
+			// free(left);
+			// free(right);
+			// free(depthNaive);
+			// free(depthOptimized);
+            error[i] = 11;
+			works = 0;
+		} else {
+            // printf("%d - %d | ", 111, 111);
+        }
 	}
+
+    printFloatImage(error, imageWidth, imageHeight);
+    printf("naive:\n");
+    printFloatImage(depthNaive, imageWidth, imageHeight);
+    printf("yours:\n");
+    printFloatImage(depthOptimized, imageWidth, imageHeight);
 
 	free(left);
 	free(right);
 	free(depthNaive);
 	free(depthOptimized);
 
-	return true;
+    if (works) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 int main(int argc, char** argv)
@@ -118,7 +142,7 @@ int main(int argc, char** argv)
 	// Fix random seed, please don't precompute things
     srand(0xDEAD + 0x61C + 0xEEC5);
 
-	int tests[][5] = { { 250, 250, 4, 4, 6 }, { 250, 250, 6, 6, 6 }, { 500, 500, 4, 4, 6 }, { 500, 500, 6, 6, 6 }, { 750, 750, 8, 8, 6 } };
+	int tests[][5] = { { 25, 25, 4, 4, 6 }, { 250, 250, 6, 6, 6 }, { 250, 250, 4, 4, 6 }, { 250, 250, 6, 6, 6 }, { 250, 250, 6, 6, 6 } };
 
 	printf("Testing non-odd cases: \r\n");
 	for (int i = 0; i < ARRAY_SIZE(tests); i++)
