@@ -90,6 +90,11 @@ static bool benchmarkMatrix(int imageWidth, int imageHeight, int featureWidth, i
 	{
 		if (!floatsWithinTolerance(depthNaive[i], depthOptimized[i]))
 		{
+			printf("WRONG AT i = %d\n", i);
+			printf("naive: %d\n", depthNaive[i]);
+			// printFloatImage(depthNaive, imageWidth, imageHeight);
+			printf("yours: %d\n", depthOptimized[i]);
+			// printFloatImage(depthOptimized, imageWidth, imageHeight);
 			free(left);
 			free(right);
 			free(depthNaive);
